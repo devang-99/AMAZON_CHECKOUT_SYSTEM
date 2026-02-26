@@ -1,0 +1,330 @@
+asyncapi: 2.6.0
+
+info:
+  title: Amazon Order Processing Event Bus
+  version: 1.0.0
+  description: >
+    Event-driven Saga for order processing across Sales, Billing, and Shipping microservices.
+    Communication is asynchronous via RabbitMQ.
+
+servers:
+  rabbitmq:
+    url: amqp://rabbitmq:5672
+    protocol: amqp
+    description: RabbitMQ broker
+
+defaultContentType: application/json
+
+channels:
+
+  # ==============================
+  # SALES → BILLING, SHIPPING
+  # ==============================
+
+  sales.order.placed:
+    description: Order created by Sales service
+    publish:
+      operationId: publishOrderPlaced
+      summary: Sales publishes new order
+      message:
+        $ref: '#/components/messages/OrderPlaced'
+
+  # ==============================
+  # BILLING EVENTS
+  # ==============================
+
+  billing.order.billed:
+    description: Billing successfully charged customer
+    publish:
+      operationId: publishOrderBilled
+      message:
+        $ref: '#/components/messages/OrderBilled'
+
+  billing.payment.failed:
+    description: Billing failed due to insufficient balance
+    publish:
+      operationId: publishPaymentFailed
+      message:
+        $ref: '#/components/messages/PaymentFailed'
+
+  billing.refund.completed:
+    description: Refund processed successfully
+    publish:
+      operationId: publishRefundCompleted
+      message:
+        $ref: '#/components/messages/RefundCompleted'
+
+  # ==============================
+  # SHIPPING EVENTS
+  # ==============================
+
+  shipping.label.created:
+    description: Shipping label created successfully
+    publish:
+      operationId: publishShippingLabelCreated
+      message:
+        $ref: '#/components/messages/ShippingLabelCreated'
+
+  shipping.failed:
+    description: Shipping failed due to insufficient inventory
+    publish:
+      operationId: publishShippingFailed
+      message:
+        $ref: '#/components/messages/ShippingFailed'
+
+  # ==============================
+  # SALES → BILLING (COMPENSATION)
+  # ==============================
+
+  sales.refund.requested:
+    description: Sales requests refund after shipping failure
+    publish:
+      operationId: publishRefundRequested
+      message:
+        $ref: '#/components/messages/RefundRequested'
+
+components:
+
+  # ======================================================
+  # COMMON EVENT HEADERS (STANDARDIZED EVENT ENVELOPE)
+  # ======================================================
+
+  messageTraits:
+    eventHeaders:
+      headers:
+        type: object
+        required:
+          - event_id
+          - event_type
+          - occurred_at
+          - producer
+        properties:
+          event_id:
+            type: string
+            format: uuid
+            example: 9b5f7b32-2e6f-4f3c-9a7a-9db13f3eaa11
+          event_type:
+            type: string
+            example: OrderPlaced
+          occurred_at:
+            type: string
+            format: date-time
+          producer:
+            type: string
+            example: sales-service
+          correlation_id:
+            type: string
+            format: uuid
+            description: Used to trace saga flow
+
+  # ======================================================
+  # MESSAGE DEFINITIONS
+  # ======================================================
+
+  messages:
+
+    # --------------------------------
+    # ORDER PLACED
+    # --------------------------------
+    OrderPlaced:
+      name: OrderPlaced
+      title: Order Placed Event
+      traits:
+        - $ref: '#/components/messageTraits/eventHeaders'
+      payload:
+        $ref: '#/components/schemas/OrderPlacedPayload'
+
+    # --------------------------------
+    # ORDER BILLED
+    # --------------------------------
+    OrderBilled:
+      name: OrderBilled
+      title: Order Billed Event
+      traits:
+        - $ref: '#/components/messageTraits/eventHeaders'
+      payload:
+        $ref: '#/components/schemas/OrderBilledPayload'
+
+    # --------------------------------
+    # PAYMENT FAILED
+    # --------------------------------
+    PaymentFailed:
+      name: PaymentFailed
+      title: Payment Failed Event
+      traits:
+        - $ref: '#/components/messageTraits/eventHeaders'
+      payload:
+        $ref: '#/components/schemas/PaymentFailedPayload'
+
+    # --------------------------------
+    # SHIPPING LABEL CREATED
+    # --------------------------------
+    ShippingLabelCreated:
+      name: ShippingLabelCreated
+      title: Shipping Label Created Event
+      traits:
+        - $ref: '#/components/messageTraits/eventHeaders'
+      payload:
+        $ref: '#/components/schemas/ShippingLabelCreatedPayload'
+
+    # --------------------------------
+    # SHIPPING FAILED
+    # --------------------------------
+    ShippingFailed:
+      name: ShippingFailed
+      title: Shipping Failed Event
+      traits:
+        - $ref: '#/components/messageTraits/eventHeaders'
+      payload:
+        $ref: '#/components/schemas/ShippingFailedPayload'
+
+    # --------------------------------
+    # REFUND REQUESTED
+    # --------------------------------
+    RefundRequested:
+      name: RefundRequested
+      title: Refund Requested Event
+      traits:
+        - $ref: '#/components/messageTraits/eventHeaders'
+      payload:
+        $ref: '#/components/schemas/RefundRequestedPayload'
+
+    # --------------------------------
+    # REFUND COMPLETED
+    # --------------------------------
+    RefundCompleted:
+      name: RefundCompleted
+      title: Refund Completed Event
+      traits:
+        - $ref: '#/components/messageTraits/eventHeaders'
+      payload:
+        $ref: '#/components/schemas/RefundCompletedPayload'
+
+  # ======================================================
+  # PAYLOAD SCHEMAS
+  # ======================================================
+
+  schemas:
+
+    OrderPlacedPayload:
+      type: object
+      required:
+        - order_id
+        - customer_id
+        - total_amount
+        - items
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        total_amount:
+          type: number
+          format: double
+        currency:
+          type: string
+          example: INR
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - product_id
+              - quantity
+              - unit_price
+            properties:
+              product_id:
+                type: string
+                format: uuid
+              quantity:
+                type: integer
+              unit_price:
+                type: number
+
+    OrderBilledPayload:
+      type: object
+      required:
+        - order_id
+        - payment_id
+        - amount
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        payment_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+
+    PaymentFailedPayload:
+      type: object
+      required:
+        - order_id
+        - reason
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          example: INSUFFICIENT_FUNDS
+
+    ShippingLabelCreatedPayload:
+      type: object
+      required:
+        - order_id
+        - shipping_label_id
+        - tracking_number
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        shipping_label_id:
+          type: string
+          format: uuid
+        tracking_number:
+          type: string
+
+    ShippingFailedPayload:
+      type: object
+      required:
+        - order_id
+        - reason
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          example: INSUFFICIENT_STOCK
+
+    RefundRequestedPayload:
+      type: object
+      required:
+        - order_id
+        - amount
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+
+    RefundCompletedPayload:
+      type: object
+      required:
+        - order_id
+        - refund_id
+        - amount
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        refund_id:
+          type: string
+          format: uuid
+        amount:
+          type: number

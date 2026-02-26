@@ -1,0 +1,88 @@
+# services:
+
+#   billing-db:
+#     image: postgres:16
+#     container_name: billing-db
+#     restart: always
+#     environment:
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: postgres
+#       POSTGRES_DB: billing_db
+#     ports:
+#       - "5433:5432"
+#     volumes:
+#       - billing-db-data:/var/lib/postgresql/data
+#     networks:
+#       - billing-network
+#     healthcheck:
+#       test: ["CMD-SHELL", "pg_isready -U postgres"]
+#       interval: 5s
+#       timeout: 5s
+#       retries: 5
+
+#   rabbitmq:
+#     image: rabbitmq:3-management
+#     container_name: billing-rabbitmq
+#     restart: always
+#     ports:
+#       - "5672:5672"
+#       - "15672:15672"
+#     volumes:
+#       - rabbitmq-data:/var/lib/rabbitmq
+#     networks:
+#       - billing-network
+#     healthcheck:
+#       test: ["CMD", "rabbitmq-diagnostics", "ping"]
+#       interval: 5s
+#       timeout: 5s
+#       retries: 5
+
+#   pgadmin:
+#     image: dpage/pgadmin4
+#     container_name: billing-pgadmin
+#     restart: always
+#     environment:
+#       PGADMIN_DEFAULT_EMAIL: admin@billing.com
+#       PGADMIN_DEFAULT_PASSWORD: admin
+#     ports:
+#       - "5050:80"
+#     volumes:
+#       - pgadmin-data:/var/lib/pgadmin
+#     networks:
+#       - billing-network
+#     depends_on:
+#       - billing-db
+
+#   billing-service:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: billing-service
+#     restart: always
+#     depends_on:
+#       billing-db:
+#         condition: service_healthy
+#       rabbitmq:
+#         condition: service_healthy
+#     environment:
+#       PORT: 3000
+#       DB_HOST: billing-db
+#       DB_PORT: 5432
+#       DB_USER: postgres
+#       DB_PASSWORD: postgres
+#       DB_NAME: billing_db
+#       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+#       RABBITMQ_EXCHANGE: order_events
+#     ports:
+#       - "3002:3000"
+#     networks:
+#       - billing-network
+
+# volumes:
+#   billing-db-data:
+#   rabbitmq-data:
+#   pgadmin-data:
+
+# networks:
+#   billing-network:
+#     driver: bridge

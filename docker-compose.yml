@@ -1,0 +1,94 @@
+version: "3.9"
+
+services:
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  sales-db:
+    image: postgres:16
+    container_name: sales-db
+    environment:
+      POSTGRES_DB: sales_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - sales-db-data:/var/lib/postgresql/data
+
+  billing-db:
+    image: postgres:16
+    container_name: billing-db
+    environment:
+      POSTGRES_DB: billing_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - billing-db-data:/var/lib/postgresql/data
+
+  shipping-db:
+    image: postgres:16
+    container_name: shipping-db
+    environment:
+      POSTGRES_DB: shipping_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - shipping-db-data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - sales-db
+      - billing-db
+      - shipping-db
+
+  sales-service:
+    build: ./sales-service
+    ports:
+      - "3001:3000"
+    env_file: ./sales-service/.env
+    depends_on:
+      - sales-db
+      - rabbitmq
+
+  billing-service:
+    build: ./billing-service
+    ports:
+      - "4001:4000"
+    env_file: ./billing-service/.env
+    depends_on:
+      - billing-db
+      - rabbitmq
+
+  shipping-service:
+    build: ./shipping-service
+    ports:
+      - "5001:5000"
+    env_file: ./shipping-service/.env
+    depends_on:
+      - shipping-db
+      - rabbitmq
+
+volumes:
+  sales-db-data:
+  billing-db-data:
+  shipping-db-data:
+  pgadmin-data:

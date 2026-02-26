@@ -1,0 +1,270 @@
+openapi: 3.0.3
+info:
+  title: Amazon Order Processing Services API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000
+
+tags:
+  - name: Sales
+  - name: Billing
+  - name: Shipping
+
+paths:
+
+  /sales/orders:
+    post:
+      tags: [Sales]
+      summary: Create a new order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+    get:
+      tags: [Sales]
+      summary: List all orders
+      responses:
+        '200':
+          description: Orders list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+
+  /sales/orders/{orderId}:
+    get:
+      tags: [Sales]
+      summary: Get order by ID
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+  /billing/accounts/{accountId}:
+    get:
+      tags: [Billing]
+      summary: Get billing account
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Billing account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingAccount'
+
+  /billing/payments/{paymentId}:
+    get:
+      tags: [Billing]
+      summary: Get payment
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+
+  /billing/refunds:
+    post:
+      tags: [Billing]
+      summary: Refund a payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequest'
+      responses:
+        '200':
+          description: Refund completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+
+  /shipping/inventory/{productId}:
+    get:
+      tags: [Shipping]
+      summary: Get inventory
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Inventory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Inventory'
+
+  /shipping/labels/{orderId}:
+    get:
+      tags: [Shipping]
+      summary: Get shipping label
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Shipping label
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShippingLabel'
+
+components:
+
+  parameters:
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+
+    Order:
+      type: object
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        total_amount:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+
+    OrderItem:
+      type: object
+      properties:
+        product_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+        unit_price:
+          type: number
+
+    CreateOrderRequest:
+      type: object
+      required: [customer_id, items]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+
+    BillingAccount:
+      type: object
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        balance:
+          type: number
+
+    Payment:
+      type: object
+      properties:
+        payment_id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+        status:
+          type: string
+
+    RefundRequest:
+      type: object
+      required: [order_id, amount]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+
+    RefundResponse:
+      type: object
+      properties:
+        refund_id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+
+    Inventory:
+      type: object
+      properties:
+        product_id:
+          type: string
+          format: uuid
+        quantity_on_hand:
+          type: integer
+
+    ShippingLabel:
+      type: object
+      properties:
+        shipping_label_id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        tracking_number:
+          type: string

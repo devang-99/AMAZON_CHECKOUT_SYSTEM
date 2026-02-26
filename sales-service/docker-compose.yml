@@ -1,0 +1,94 @@
+# version: "3.9"
+
+# services:
+
+#   sales-db:
+#     image: postgres:16-alpine
+#     container_name: sales-db
+#     restart: always
+#     environment:
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: postgres
+#       POSTGRES_DB: sales_db
+#     ports:
+#       - "5432:5432"
+#     volumes:
+#       - sales-db-data:/var/lib/postgresql/data
+#     healthcheck:
+#       test: ["CMD-SHELL", "pg_isready -U postgres"]
+#       interval: 5s
+#       timeout: 5s
+#       retries: 5
+#     networks:
+#       - sales-network
+
+#   rabbitmq:
+#     image: rabbitmq:3-management-alpine
+#     container_name: sales-rabbitmq
+#     restart: always
+#     ports:
+#       - "5672:5672"
+#       - "15672:15672"
+#     volumes:
+#       - rabbitmq-data:/var/lib/rabbitmq
+#     healthcheck:
+#       test: ["CMD", "rabbitmq-diagnostics", "ping"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 5
+#     networks:
+#       - sales-network
+
+#   pgadmin:
+#     image: dpage/pgadmin4
+#     container_name: sales-pgadmin
+#     restart: always
+#     environment:
+#       PGADMIN_DEFAULT_EMAIL: admin@admin.com
+#       PGADMIN_DEFAULT_PASSWORD: admin
+#     ports:
+#       - "5050:80"
+#     depends_on:
+#       - sales-db
+#     networks:
+#       - sales-network
+
+#   sales-service:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: sales-service
+#     restart: always
+#     ports:
+#       - "3000:3000"
+
+#     environment:
+#       PORT: 3000
+
+#       DB_HOST: sales-db
+#       DB_PORT: 5432
+#       DB_USER: postgres
+#       DB_PASS: postgres
+#       DB_NAME: sales_db
+
+#       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+#       RABBITMQ_EXCHANGE: order.events
+
+#     depends_on:
+#       sales-db:
+#         condition: service_healthy
+#       rabbitmq:
+#         condition: service_healthy
+
+#     networks:
+#       - sales-network
+
+
+# networks:
+#   sales-network:
+#     driver: bridge
+
+
+# volumes:
+#   sales-db-data:
+#   rabbitmq-data:
