@@ -1,42 +1,79 @@
 /* eslint-disable */
-import { Body, Controller, Post } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 
-@Controller('api/v1/orders')
-export class OrdersController {
-  constructor(private readonly http: HttpService) {}
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
+import axios from 'axios';
 
-  @Post()
+@Controller('api/v1')
+export class GatewayController {
+
+
+
+  @Post('orders')
   async createOrder(@Body() body: any) {
-    await Promise.all([
-      firstValueFrom(
-        this.http.post('http://sales-service:3000/orders', {
+    try {
+      const response = await axios.post(
+        'http://sales-service:3001/orders',
+        {
           customerId: body.customerId,
-          totalAmount: body.totalAmount,
-        }),
-      ),
+          items: body.items,
+        },
+      );
 
-      firstValueFrom(
-        this.http.post('http://billing-service:4000/api/v1/billing/orders', {
-          orderId: body.orderId,
-          billingAccountId: body.billingAccountId,
-          billingAddress: body.billingAddress,
-        }),
-      ),
-
-      firstValueFrom(
-        this.http.post('http://shipping-service:5000/api/v1/shipping/orders', {
-          orderId: body.orderId,
-          products: body.products,
-          shippingAddress: body.shippingAddress,
-        }),
-      ),
-    ]);
-
-    return {
-      orderId: body.orderId,
-      message: 'order fan-out done',
-    };
+      return response.data;
+    } catch (error: any) {
+      throw new HttpException(
+        error?.response?.data || 'Sales service error',
+        error?.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
+
+  @Get('orders')
+  async getAllOrders() {
+    try {
+      const response = await axios.get(
+        'http://sales-service:3001/orders',
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new HttpException(
+        error?.response?.data || 'Sales service error',
+        error?.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('orders/:id')
+  async getOrder(@Param('id') id: string) {
+    try {
+      const response = await axios.get(
+        `http://sales-service:3001/orders/${id}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new HttpException(
+        error?.response?.data || 'Sales service error',
+        error?.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+
+  @Post('billing/accounts/seed')
+  async seedAccount(@Body() body: any) {
+    const response = await axios.post(
+      'http://billing-service:4001/billing/accounts/seed',
+      body,
+    );
+    return response.data;
+  }
+
 }
