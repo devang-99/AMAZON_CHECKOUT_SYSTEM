@@ -26,7 +26,9 @@ export class OrdersConsumer implements OnModuleInit {
         const conn = await amqp.connect(rabbitConfig.url);
         this.channel = await conn.createChannel();
 
-        // Declare the exchanges
+        await this.channel.prefetch(25);
+
+        // ---------------- EXCHANGES ----------------
         await this.channel.assertExchange(rabbitConfig.exchange, 'topic', {
           durable: true,
         });
@@ -35,25 +37,14 @@ export class OrdersConsumer implements OnModuleInit {
           durable: true,
         });
 
-        // Ensure the queue exists; if it already exists with different configuration, delete and re-declare it
-        try {
-          await this.channel.deleteQueue('sales-service-queue');
-          console.log('Deleted existing sales-service-queue to recreate it');
-        } catch (deleteErr) {
-          console.log(
-            'No existing sales-service-queue or failed to delete it:',
-            deleteErr,
-          );
-        }
-
-        // Declare the main queue with DLX argument
+        // ---------------- MAIN QUEUE ----------------
         const mainQueue = await this.channel.assertQueue(
           'sales-service-queue',
           {
             durable: true,
             arguments: {
-              'x-dead-letter-exchange': 'sales-dlx', // Dead Letter Exchange
-              'x-dead-letter-routing-key': 'sales.retry', // DLX routing key
+              'x-dead-letter-exchange': 'sales-dlx',
+              'x-dead-letter-routing-key': 'sales.retry',
             },
           },
         );
@@ -66,7 +57,6 @@ export class OrdersConsumer implements OnModuleInit {
           'order.refunded',
         ];
 
-        // Bind the queue to the exchange for each routing key
         for (const key of bindings) {
           await this.channel.bindQueue(
             mainQueue.queue,
@@ -75,11 +65,11 @@ export class OrdersConsumer implements OnModuleInit {
           );
         }
 
-        // Declare the retry queue with TTL and DLX
+        // ---------------- RETRY QUEUE ----------------
         await this.channel.assertQueue('sales-retry-queue', {
           durable: true,
           arguments: {
-            'x-message-ttl': 5000, // Retry delay (5 seconds)
+            'x-message-ttl': 5000,
             'x-dead-letter-exchange': rabbitConfig.exchange,
           },
         });
@@ -90,7 +80,7 @@ export class OrdersConsumer implements OnModuleInit {
           'sales.retry',
         );
 
-        // Declare the dead-letter queue
+        // ---------------- DEAD QUEUE ----------------
         await this.channel.assertQueue('sales-dead-queue', {
           durable: true,
         });
@@ -101,65 +91,82 @@ export class OrdersConsumer implements OnModuleInit {
           'sales.dead',
         );
 
-        await this.channel.prefetch(25);
-
-        // Start consuming the main queue
+        // ---------------- CONSUMER ----------------
         await this.channel.consume(
           mainQueue.queue,
           (msg) => this.handleMessage(msg),
           { noAck: false },
         );
 
-        console.log('Sales consumer connected with DLQ + retry');
+        console.log('Sales consumer connected with retry + DLQ');
       } catch (err) {
         console.log('RabbitMQ not ready — retry in 5s');
         await new Promise((res) => setTimeout(res, 5000));
       }
     }
   }
+
   private async handleMessage(msg: ConsumeMessage | null): Promise<void> {
-    if (!msg) return;
+    if (!msg || !this.channel) return;
 
     const routingKey = msg.fields.routingKey;
 
     try {
-      const message = JSON.parse(msg.content.toString()) as {
-        eventId: string;
-        payload: { orderId: string };
-      };
+      const raw = msg.content.toString();
+      console.log(`📩 Received [${routingKey}] → ${raw}`);
+
+      const parsed = JSON.parse(raw);
+
+      // ---------------- VALIDATION ----------------
+      if (!parsed?.eventId) {
+        throw new Error('Missing eventId in message');
+      }
+
+      if (!parsed?.payload?.orderId) {
+        throw new Error('Missing payload.orderId');
+      }
 
       const data: OrderStatusEvent = {
-        eventId: message.eventId,
-        orderId: message.payload.orderId,
+        eventId: parsed.eventId,
+        orderId: parsed.payload.orderId,
       };
 
+      // ---------------- ROUTING ----------------
       switch (routingKey) {
         case 'order.billed':
           await this.ordersService.handleOrderBilled(data);
           break;
+
         case 'payment.failed':
           await this.ordersService.handlePaymentFailed(data);
           break;
+
         case 'shipping.created':
           await this.ordersService.handleShippingCreated(data);
           break;
+
         case 'order.completed':
           await this.ordersService.handleOrderCompleted(data);
           break;
+
         case 'order.refunded':
           await this.ordersService.handleOrderRefunded(data);
           break;
+
+        default:
+          console.warn(`⚠ Unknown routing key: ${routingKey}`);
       }
 
+      console.log(`✅ Event processed: ${parsed.eventId}`);
       this.channel.ack(msg);
     } catch (err) {
-      console.error('EVENT PROCESSING FAILED', err);
+      console.error('❌ EVENT PROCESSING FAILED:', err);
 
       const deathCount =
         (msg.properties.headers?.['x-death']?.[0]?.count as number) || 0;
 
       if (deathCount >= 3) {
-        console.error('Max retries reached — sending to permanent DLQ');
+        console.error('🚨 Max retries reached — sending to DEAD queue');
 
         this.channel.publish('sales-dlx', 'sales.dead', msg.content, {
           persistent: true,
@@ -167,9 +174,7 @@ export class OrdersConsumer implements OnModuleInit {
 
         this.channel.ack(msg);
       } else {
-        console.log(`Retry attempt ${deathCount + 1}`);
-
-        // Send to retry queue (via DLX)
+        console.log(`🔁 Retry attempt ${deathCount + 1}`);
         this.channel.nack(msg, false, false);
       }
     }

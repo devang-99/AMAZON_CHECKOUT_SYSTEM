@@ -1,24 +1,27 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from '@nestjs/common';
-import { AppDataSource } from '../config/datasource';
-import { OutboxEvent } from '../outbox/outbox.entity';
-import { InboxEvent } from '../inbox/inbox.entity';
-import { OrdersGateway } from '../websocket/orders.gateway';
-import { Order } from './entities/order.entity';
-import { OrderStatus } from './entities/order.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { v4 as uuid } from 'uuid';
+import { OrdersGateway } from '../websocket/orders.gateway';
+import { Order, OrderStatus } from './entities/order.entity';
+import { InboxEvent } from '../inbox/inbox.entity';
+import { OutboxEvent } from '../outbox/outbox.entity';
 import { OrderStatusEvent } from 'src/types/order-status-event.type';
 
 @Injectable()
 export class OrdersService {
-  constructor(private gateway: OrdersGateway) {}
+  constructor(
+    private gateway: OrdersGateway,
+    private dataSource: DataSource,
 
-  private orderRepo = AppDataSource.getRepository(Order);
-  private inboxRepo = AppDataSource.getRepository(InboxEvent);
+    @InjectRepository(Order)
+    private orderRepo: Repository<Order>,
 
-  // ---------------------------
-  // READ OPERATIONS
-  // ---------------------------
+    @InjectRepository(InboxEvent)
+    private inboxRepo: Repository<InboxEvent>,
+  ) {}
+
 
   async getAllOrders() {
     return this.orderRepo.find();
@@ -28,16 +31,15 @@ export class OrdersService {
     return this.orderRepo.findOneBy({ id: orderId });
   }
 
-  // ---------------------------
-  // CREATE ORDER (UPDATED)
-  // ---------------------------
+  // =====================================================
+  // CREATE ORDER
+  // =====================================================
 
   async createOrder(customerId: string, items: any[]) {
-    return AppDataSource.transaction(async (manager) => {
-      // Enrich items with price snapshot
-      // Replace static pricing later with catalog service call
+    return this.dataSource.transaction(async (manager) => {
+      // price snapshot (replace with catalog later)
       const enrichedItems = items.map((item) => {
-        const unitPrice = 100; // placeholder price
+        const unitPrice = 100;
         const totalPrice = unitPrice * item.quantity;
 
         return {
@@ -69,7 +71,7 @@ export class OrdersService {
 
       await manager.save(order);
 
-      // Outbox event (same structure as before)
+      // OUTBOX EVENT (for billing service)
       await manager.save(OutboxEvent, {
         id: uuid(),
         type: 'order.created',
@@ -87,9 +89,9 @@ export class OrdersService {
     });
   }
 
-  // ---------------------------
-  // EVENT HANDLERS
-  // ---------------------------
+  // =====================================================
+  // EVENT HANDLERS (from billing & shipping)
+  // =====================================================
 
   async handleOrderBilled(event: OrderStatusEvent) {
     await this.processEvent(event.eventId, async () => {
@@ -121,35 +123,41 @@ export class OrdersService {
     });
   }
 
-  // ---------------------------
+  // =====================================================
   // INBOX IDEMPOTENCY
-  // ---------------------------
+  // =====================================================
 
   private async processEvent(eventId: string, handler: () => Promise<void>) {
     try {
-      await AppDataSource.transaction(async (manager) => {
-        await handler();
-
+      await this.dataSource.transaction(async (manager) => {
         const exists = await manager.findOne(InboxEvent, {
           where: { eventId },
         });
 
-        if (!exists) {
-          await manager.save(InboxEvent, { eventId });
+        if (exists) {
+          console.log(`Event ${eventId} already processed`);
+          return;
         }
+
+        await handler();
+
+        await manager.save(InboxEvent, {
+          eventId,
+          processed: true,
+        });
       });
-    } catch (err) {
+    } catch (err: any) {
       if (err.code === '23505') {
-        console.log(`Event ${eventId} already processed.`);
+        console.log(`Duplicate event ignored: ${eventId}`);
         return;
       }
       throw err;
     }
   }
 
-  // ---------------------------
+  // =====================================================
   // STATUS MANAGEMENT
-  // ---------------------------
+  // =====================================================
 
   private async updateStatus(orderId: string, newStatus: OrderStatus) {
     const order = await this.orderRepo.findOneBy({ id: orderId });
@@ -179,15 +187,15 @@ export class OrdersService {
     return transitions[current].includes(next);
   }
 
-  // ---------------------------
+  // =====================================================
   // ADMIN RESET
-  // ---------------------------
+  // =====================================================
 
   async resetDatabase() {
-    await AppDataSource.query('TRUNCATE orders CASCADE');
-    await AppDataSource.query('TRUNCATE order_items CASCADE');
-    await AppDataSource.query('TRUNCATE outbox_events CASCADE');
-    await AppDataSource.query('TRUNCATE inbox_events CASCADE');
+    await this.dataSource.query('TRUNCATE orders CASCADE');
+    await this.dataSource.query('TRUNCATE order_items CASCADE');
+    await this.dataSource.query('TRUNCATE outbox_events CASCADE');
+    await this.dataSource.query('TRUNCATE inbox_events CASCADE');
 
     return { message: 'Database cleared' };
   }

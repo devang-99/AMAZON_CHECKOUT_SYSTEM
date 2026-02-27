@@ -17,11 +17,11 @@ export class ShipmentEntity {
   @Column({ unique: true })
   orderId: string;
 
-@Column({
-  type: 'enum',
-  enum: ShipmentStatus,
-})
-status: ShipmentStatus;
+  @Column({
+    type: 'enum',
+    enum: ShipmentStatus,
+  })
+  status: ShipmentStatus;
 
   @Column()
   trackingNumber: string;
